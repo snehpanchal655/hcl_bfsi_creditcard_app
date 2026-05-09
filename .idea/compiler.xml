@@ -10,13 +10,6 @@
           <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.30/lombok-1.18.30.jar" />
           <entry name="$MAVEN_REPOSITORY$/org/mapstruct/mapstruct-processor/1.5.5.Final/mapstruct-processor-1.5.5.Final.jar" />
         </processorPath>
-        <module name="application-service" />
-        <module name="auth-service" />
-        <module name="credit-service" />
-        <module name="card-service" />
-        <module name="common-lib" />
-        <module name="eureka-server" />
-        <module name="notification-service" />
       </profile>
     </annotationProcessing>
   </component>
