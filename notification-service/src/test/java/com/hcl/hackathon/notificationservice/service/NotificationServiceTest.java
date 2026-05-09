@@ -219,8 +219,8 @@ class NotificationServiceTest {
     private ApplicationStatusEvent approvedEvent() {
         return ApplicationStatusEvent.builder()
                 .applicationId("APP-2024-00042")
-                .email("john.doe@example.com")
-                .customerName("John Doe")
+                .email("sneh@gmail.com")
+                .customerName("Sneh Panchal")
                 .status(ApplicationStatus.APPROVED)
                 .remarks(null)
                 .build();
@@ -229,8 +229,8 @@ class NotificationServiceTest {
     private ApplicationStatusEvent rejectedEvent() {
         return ApplicationStatusEvent.builder()
                 .applicationId("APP-2024-00099")
-                .email("jane.smith@example.com")
-                .customerName("Jane Smith")
+                .email("smit@gmail.com")
+                .customerName("Smit")
                 .status(ApplicationStatus.REJECTED)
                 .remarks("Insufficient credit history")
                 .build();
@@ -239,8 +239,8 @@ class NotificationServiceTest {
     private ApplicationStatusEvent errorEvent() {
         return ApplicationStatusEvent.builder()
                 .applicationId("APP-2024-00077")
-                .email("error.user@example.com")
-                .customerName("Error User")
+                .email("raj@gmail.com")
+                .customerName("Raj")
                 .status(ApplicationStatus.ERROR)
                 .remarks("Downstream bureau service timeout")
                 .build();

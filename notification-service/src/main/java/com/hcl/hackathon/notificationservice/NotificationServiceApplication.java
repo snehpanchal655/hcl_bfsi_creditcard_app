@@ -9,7 +9,6 @@ import org.springframework.retry.annotation.EnableRetry;
 @SpringBootApplication
 @EnableDiscoveryClient
 @EnableRetry
-@EnableKafkaRetryTopic
 public class NotificationServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(NotificationServiceApplication.class, args);
