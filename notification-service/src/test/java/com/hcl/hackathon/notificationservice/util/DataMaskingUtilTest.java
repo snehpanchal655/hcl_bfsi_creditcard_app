@@ -1,4 +1,4 @@
-package com.creditcard.notification.util;
+package com.hcl.hackathon.notificationservice.util;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,19 +8,10 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Unit tests for {@link DataMaskingUtil}.
- *
- * <p>No Spring context required — pure unit tests, instantiating the class directly.
- */
 @DisplayName("DataMaskingUtil")
 class DataMaskingUtilTest {
 
     private final DataMaskingUtil maskingUtil = new DataMaskingUtil();
-
-    // -------------------------------------------------------------------------
-    // maskApplicationId
-    // -------------------------------------------------------------------------
 
     @DisplayName("maskApplicationId — standard format")
     @ParameterizedTest(name = "''{0}'' → ''{1}''")
@@ -55,10 +46,6 @@ class DataMaskingUtilTest {
         String masked = maskingUtil.maskApplicationId("APP-2024-00042");
         assertThat(masked).doesNotContain("2024");
     }
-
-    // -------------------------------------------------------------------------
-    // maskEmail
-    // -------------------------------------------------------------------------
 
     @DisplayName("maskEmail — standard emails")
     @ParameterizedTest(name = "''{0}'' → starts with first char of local part")

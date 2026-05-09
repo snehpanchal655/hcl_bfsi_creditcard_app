@@ -1,11 +1,12 @@
-package com.creditcard.notification.service;
+package com.hcl.hackathon.notificationservice.service;
 
-import com.creditcard.notification.email.EmailTemplateGenerator;
-import com.creditcard.notification.email.EmailTemplateGenerator.EmailContent;
-import com.creditcard.notification.model.ApplicationStatusEvent;
-import com.creditcard.notification.model.ApplicationStatusEvent.ApplicationStatus;
-import com.creditcard.notification.service.NotificationService.NotificationException;
-import com.creditcard.notification.util.DataMaskingUtil;
+import com.hcl.hackathon.notificationservice.email.EmailTemplateGenerator;
+import com.hcl.hackathon.notificationservice.email.EmailTemplateGenerator.EmailContent;
+import com.hcl.hackathon.notificationservice.kafka.KafkaMessageContext;
+import com.hcl.hackathon.notificationservice.model.ApplicationStatusEvent;
+import com.hcl.hackathon.notificationservice.model.ApplicationStatusEvent.ApplicationStatus;
+import com.hcl.hackathon.notificationservice.service.NotificationService.NotificationException;
+import com.hcl.hackathon.notificationservice.util.DataMaskingUtil;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,34 +25,19 @@ import org.springframework.test.util.ReflectionTestUtils;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-/**
- * Unit tests for {@link NotificationService}.
- *
- * <h3>Scope</h3>
- * <ul>
- *   <li>Verifies that {@link JavaMailSender#send(MimeMessage)} is called
- *       <em>exactly once</em> on a successful event.</li>
- *   <li>Verifies that a {@link NotificationException} is raised (never swallowed)
- *       when the mail transport fails.</li>
- *   <li>Verifies correct delegation to {@link EmailTemplateGenerator}.</li>
- *   <li>Verifies status-specific routing (APPROVED / REJECTED / ERROR).</li>
- * </ul>
- *
- * <h3>Design decisions</h3>
- * {@code @ExtendWith(MockitoExtension.class)} initialises mocks without a Spring
- * context, keeping tests fast (&lt;200 ms). {@link MimeMessage} is a concrete
- * class with a complex constructor, so we use {@code mock(MimeMessage.class)}
- * returned by {@link JavaMailSender#createMimeMessage()}.
- */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("NotificationService")
 class NotificationServiceTest {
 
-    // -------------------------------------------------------------------------
-    // Mocks
-    // -------------------------------------------------------------------------
+    private static final KafkaMessageContext KAFKA_CTX = new KafkaMessageContext("card.status", 0, 1L);
 
     @Mock
     private JavaMailSender mailSender;
@@ -62,36 +48,28 @@ class NotificationServiceTest {
     @Mock
     private DataMaskingUtil maskingUtil;
 
+    @Mock
+    private NotificationLogService notificationLogService;
+
     @InjectMocks
     private NotificationService notificationService;
 
-    // -------------------------------------------------------------------------
-    // Shared fixtures
-    // -------------------------------------------------------------------------
-
     private MimeMessage mockMimeMessage;
 
-    private static final String MASKED_ID    = "APP-XXXX-0042";
+    private static final String MASKED_ID = "APP-XXXX-0042";
     private static final String MASKED_EMAIL = "j***@e*****.com";
     private static final String FROM_ADDRESS = "noreply@creditcard.com";
 
     @BeforeEach
     void setUp() throws MessagingException {
-        // Inject the @Value field that Spring normally populates
         ReflectionTestUtils.setField(notificationService, "fromAddress", FROM_ADDRESS);
 
-        // JavaMailSender.createMimeMessage() must return a mockable MimeMessage
         mockMimeMessage = mock(MimeMessage.class);
         when(mailSender.createMimeMessage()).thenReturn(mockMimeMessage);
 
-        // Default masking stubs — override per test where needed
         when(maskingUtil.maskApplicationId(any())).thenReturn(MASKED_ID);
         when(maskingUtil.maskEmail(any())).thenReturn(MASKED_EMAIL);
     }
-
-    // =========================================================================
-    // Nested: APPROVED
-    // =========================================================================
 
     @Nested
     @DisplayName("when status is APPROVED")
@@ -100,52 +78,38 @@ class NotificationServiceTest {
         @Test
         @DisplayName("should call mailSender.send() exactly once")
         void shouldSendExactlyOneEmail() {
-            // Arrange
             ApplicationStatusEvent event = approvedEvent();
             EmailContent content = new EmailContent("Approved Subject", "<html>approved</html>");
             when(emailTemplateGenerator.generate(event)).thenReturn(content);
 
-            // Act
-            notificationService.processNotification(event);
+            notificationService.processNotification(event, KAFKA_CTX);
 
-            // Assert — THE core requirement: send() called exactly once
             verify(mailSender, times(1)).send(any(MimeMessage.class));
+            verify(notificationLogService).recordSuccess(eq(event), eq(KAFKA_CTX), any());
         }
 
         @Test
         @DisplayName("should delegate email generation to EmailTemplateGenerator")
         void shouldDelegateToTemplateGenerator() {
-            // Arrange
             ApplicationStatusEvent event = approvedEvent();
-            EmailContent content = new EmailContent("Subject", "<html/>");
-            when(emailTemplateGenerator.generate(event)).thenReturn(content);
+            when(emailTemplateGenerator.generate(event)).thenReturn(new EmailContent("Subject", "<html/>"));
 
-            // Act
-            notificationService.processNotification(event);
+            notificationService.processNotification(event, KAFKA_CTX);
 
-            // Assert
             verify(emailTemplateGenerator, times(1)).generate(event);
         }
 
         @Test
         @DisplayName("should mask applicationId before logging (maskingUtil called)")
         void shouldMaskApplicationId() {
-            // Arrange
             ApplicationStatusEvent event = approvedEvent();
-            when(emailTemplateGenerator.generate(event))
-                    .thenReturn(new EmailContent("S", "<h/>"));
+            when(emailTemplateGenerator.generate(event)).thenReturn(new EmailContent("S", "<h/>"));
 
-            // Act
-            notificationService.processNotification(event);
+            notificationService.processNotification(event, KAFKA_CTX);
 
-            // Assert
-            verify(maskingUtil, atLeastOnce()).maskApplicationId(event.getApplicationId());
+            verify(maskingUtil, times(1)).maskApplicationId(event.getApplicationId());
         }
     }
-
-    // =========================================================================
-    // Nested: REJECTED
-    // =========================================================================
 
     @Nested
     @DisplayName("when status is REJECTED")
@@ -158,15 +122,12 @@ class NotificationServiceTest {
             when(emailTemplateGenerator.generate(event))
                     .thenReturn(new EmailContent("Rejected Subject", "<html>rejected</html>"));
 
-            notificationService.processNotification(event);
+            notificationService.processNotification(event, KAFKA_CTX);
 
             verify(mailSender, times(1)).send(any(MimeMessage.class));
+            verify(notificationLogService).recordSuccess(eq(event), eq(KAFKA_CTX), any());
         }
     }
-
-    // =========================================================================
-    // Nested: ERROR
-    // =========================================================================
 
     @Nested
     @DisplayName("when status is ERROR")
@@ -179,15 +140,12 @@ class NotificationServiceTest {
             when(emailTemplateGenerator.generate(event))
                     .thenReturn(new EmailContent("Error Subject", "<html>error</html>"));
 
-            notificationService.processNotification(event);
+            notificationService.processNotification(event, KAFKA_CTX);
 
             verify(mailSender, times(1)).send(any(MimeMessage.class));
+            verify(notificationLogService).recordSuccess(eq(event), eq(KAFKA_CTX), any());
         }
     }
-
-    // =========================================================================
-    // Nested: Failure / Resilience
-    // =========================================================================
 
     @Nested
     @DisplayName("when mail transport fails")
@@ -196,45 +154,37 @@ class NotificationServiceTest {
         @Test
         @DisplayName("should throw NotificationException wrapping the MailException")
         void shouldWrapAndRethrowMailException() {
-            // Arrange
             ApplicationStatusEvent event = approvedEvent();
-            when(emailTemplateGenerator.generate(event))
-                    .thenReturn(new EmailContent("Subject", "<html/>"));
+            when(emailTemplateGenerator.generate(event)).thenReturn(new EmailContent("Subject", "<html/>"));
             doThrow(new MailSendException("SMTP connection refused"))
                     .when(mailSender).send(any(MimeMessage.class));
 
-            // Act + Assert
-            assertThatThrownBy(() -> notificationService.processNotification(event))
+            assertThatThrownBy(() -> notificationService.processNotification(event, KAFKA_CTX))
                     .isInstanceOf(NotificationException.class)
                     .hasMessageContaining(MASKED_ID)
                     .hasCauseInstanceOf(MailSendException.class);
+
+            verify(notificationLogService).recordFailure(eq(event), eq(KAFKA_CTX), any(), anyString());
         }
 
         @Test
         @DisplayName("should NOT swallow exceptions (send() must not be called again)")
         void shouldNotRetryInternally() {
-            // Arrange
             ApplicationStatusEvent event = approvedEvent();
-            when(emailTemplateGenerator.generate(event))
-                    .thenReturn(new EmailContent("Subject", "<html/>"));
+            when(emailTemplateGenerator.generate(event)).thenReturn(new EmailContent("Subject", "<html/>"));
             doThrow(new MailSendException("timeout"))
                     .when(mailSender).send(any(MimeMessage.class));
 
-            // Act — swallow the expected exception to continue assertions
             try {
-                notificationService.processNotification(event);
+                notificationService.processNotification(event, KAFKA_CTX);
             } catch (NotificationException ignored) {
                 // expected
             }
 
-            // The service must NOT retry internally; retry is Kafka infrastructure's job
             verify(mailSender, times(1)).send(any(MimeMessage.class));
+            verify(notificationLogService).recordFailure(eq(event), eq(KAFKA_CTX), any(), anyString());
         }
     }
-
-    // =========================================================================
-    // Nested: MimeMessage construction
-    // =========================================================================
 
     @Nested
     @DisplayName("MimeMessage construction")
@@ -244,10 +194,9 @@ class NotificationServiceTest {
         @DisplayName("should create a MimeMessage via mailSender.createMimeMessage()")
         void shouldCreateMimeMessage() {
             ApplicationStatusEvent event = approvedEvent();
-            when(emailTemplateGenerator.generate(event))
-                    .thenReturn(new EmailContent("Subj", "<p>body</p>"));
+            when(emailTemplateGenerator.generate(event)).thenReturn(new EmailContent("Subj", "<p>body</p>"));
 
-            notificationService.processNotification(event);
+            notificationService.processNotification(event, KAFKA_CTX);
 
             verify(mailSender, times(1)).createMimeMessage();
         }
@@ -256,22 +205,16 @@ class NotificationServiceTest {
         @DisplayName("should pass the MimeMessage returned by createMimeMessage() to send()")
         void shouldPassSameMimeMessageToSend() {
             ApplicationStatusEvent event = approvedEvent();
-            when(emailTemplateGenerator.generate(event))
-                    .thenReturn(new EmailContent("Subj", "<p>body</p>"));
+            when(emailTemplateGenerator.generate(event)).thenReturn(new EmailContent("Subj", "<p>body</p>"));
 
-            notificationService.processNotification(event);
+            notificationService.processNotification(event, KAFKA_CTX);
 
             ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
             verify(mailSender).send(captor.capture());
 
-            // The MimeMessage passed to send() must be the one createMimeMessage() returned
             assertThat(captor.getValue()).isSameAs(mockMimeMessage);
         }
     }
-
-    // =========================================================================
-    // Factory helpers
-    // =========================================================================
 
     private ApplicationStatusEvent approvedEvent() {
         return ApplicationStatusEvent.builder()
